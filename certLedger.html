@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>certLedger Evidence Timeline</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f2ec; --card: #ffffff; --ink: #1d1d1f; --muted: #5f6368;
+      --line: #d8d2c8; --accent: #314f7a; --accent2: #7a3f31;
+      --code: #ebe6dc; --ok: #276749; --warn: #8a4b08; --bad: #9b1c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#151515; --card:#202020; --ink:#eee; --muted:#aaa; --line:#3b3b3b; --accent:#9ab8ef; --accent2:#e0a08e; --code:#2b2b2b; --ok:#8fd4aa; --warn:#e7b56b; --bad:#ff9b9b; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); line-height:1.45; }
+    header, main { max-width:1220px; margin:0 auto; padding:18px; }
+    header { padding-top:28px; }
+    h1 { margin:0 0 6px; font-size:clamp(1.7rem,4vw,3rem); letter-spacing:-.04em; }
+    h2 { margin:28px 0 10px; font-size:1.25rem; }
+    h3 { margin:0 0 8px; font-size:1.05rem; }
+    p { margin:0 0 12px; }
+    .muted { color:var(--muted); }
+    .small { font-size:.9rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(285px,1fr)); gap:14px; }
+    .wide-grid { display:grid; grid-template-columns:minmax(280px,.85fr) minmax(330px,1.15fr); gap:14px; align-items:start; }
+    @media (max-width:850px) { .wide-grid { grid-template-columns:1fr; } }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    .warning { border-left:4px solid var(--accent2); }
+    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 9px; font-size:.82rem; color:var(--muted); background:transparent; }
+    .pill.ok { color:var(--ok); border-color:currentColor; }
+    .pill.warn { color:var(--warn); border-color:currentColor; }
+    .pill.bad { color:var(--bad); border-color:currentColor; }
+    code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; background:var(--code); border-radius:6px; padding:2px 5px; word-break:break-all; }
+    a.button, button { display:inline-block; border:1px solid var(--accent); border-radius:10px; color:var(--accent); background:transparent; padding:7px 10px; font-weight:650; text-decoration:none; cursor:pointer; font:inherit; }
+    a.button:hover, button:hover { filter:brightness(.9); }
+    textarea, input, select { width:100%; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font:inherit; }
+    textarea { min-height:130px; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; resize:vertical; }
+    label { display:block; font-weight:650; margin:10px 0 5px; }
+    img { display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:10px; background:#fff; }
+    table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+    th, td { text-align:left; vertical-align:top; border-bottom:1px solid var(--line); padding:9px; }
+    th { color:var(--muted); font-weight:700; }
+    tr:last-child td { border-bottom:0; }
+    .timeline { position:relative; display:grid; gap:10px; }
+    .event { border-left:4px solid var(--accent); }
+    .event.usps { border-left-color:var(--warn); }
+    .event.letter { border-left-color:var(--ok); }
+    .event.evidence { border-left-color:var(--accent2); }
+    .file-preview { max-height:5.7em; overflow:hidden; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>certLedger Evidence Timeline</h1>
+  <p class="muted">Local-first tracker for certified mail, screenshots, letters, evidence files, and dispute timeline work. No USPS scraping. No iframe trapdoor.</p>
+</header>
+
+<main>
+  <section class="card warning">
+    <h2>Operating rule</h2>
+    <p>USPS remains a human lookup source. This page opens live USPS tracking pages and stores your manually captured status notes. Durable evidence is still your local screenshots, PDFs, letters, receipts, and exported JSON.</p>
+    <p class="small muted">Run this from a local web server, not raw <code>file://</code>, if you want it to load <code>evidence-index.json</code>: <code>python3 -m http.server 8000</code></p>
+  </section>
+
+  <section>
+    <h2>Tracking records</h2>
+    <div id="records" class="grid"></div>
+  </section>
+
+  <section class="wide-grid">
+    <div class="card">
+      <h2>Add timeline event</h2>
+      <label for="eventDate">Date / time</label>
+      <input id="eventDate" type="datetime-local">
+      <label for="eventKind">Kind</label>
+      <select id="eventKind">
+        <option value="usps">USPS status snapshot</option>
+        <option value="letter">Letter / dispute action</option>
+        <option value="call">Phone call / conversation</option>
+        <option value="evidence">Evidence file</option>
+        <option value="note">Note</option>
+      </select>
+      <label for="eventParty">Party</label>
+      <select id="eventParty"></select>
+      <label for="eventTracking">Tracking number, optional</label>
+      <input id="eventTracking" placeholder="9589...">
+      <label for="eventText">Event text</label>
+      <textarea id="eventText" placeholder="Example: USPS showed Available for Pickup at CHIMNEY CORNERS. Screenshot saved as ..."></textarea>
+      <p class="row">
+        <button id="saveEvent" type="button">Save event locally</button>
+        <button id="exportEvents" type="button">Export timeline JSON</button>
+        <button id="clearEvents" type="button">Clear local events</button>
+      </p>
+    </div>
+    <div class="card">
+      <h2>Timeline</h2>
+      <p class="row">
+        <input id="timelineSearch" placeholder="filter timeline: firmus, ncs, tracking number, filename...">
+      </p>
+      <div id="timeline" class="timeline"></div>
+    </div>
+  </section>
+
+  <section class="wide-grid">
+    <div class="card">
+      <h2>Letter craft controls</h2>
+      <label for="recipientSelect">Recipient</label>
+      <select id="recipientSelect"></select>
+      <label for="letterSelect">Base letter file</label>
+      <select id="letterSelect"></select>
+      <label for="claimTheme">Theme</label>
+      <input id="claimTheme" value="Broken lease rent acceleration in Texas">
+      <label for="factsBox">Facts to preserve</label>
+      <textarea id="factsBox">Apartment claimed about $10,000 after broken lease.
+Large portion appears to be accelerated rent, roughly $8,000.
+Additional concession charge-back appears around $1,500.
+Debt has been placed with National Credit Systems.
+Certified letters were sent to apartment office, Firmus, and NCS.
+Request validation, full accounting, lease provisions relied upon, mitigation details, and correction/deletion of inaccurate credit reporting.</textarea>
+      <label for="requestsBox">Requested outcomes</label>
+      <textarea id="requestsBox">Validate the debt with itemized accounting.
+Identify whether the amount includes accelerated rent, reletting fees, concessions, damages, utilities, late fees, attorney fees, or other charges.
+Provide the lease clause relied upon for each charge.
+Explain mitigation/reletting efforts and any rent recovered.
+Cease or correct inaccurate credit reporting while disputed.</textarea>
+      <p class="row">
+        <button id="buildDraft" type="button">Build drafting notes</button>
+        <button id="copyDraft" type="button">Copy drafting notes</button>
+        <button id="downloadDraft" type="button">Download notes</button>
+      </p>
+    </div>
+    <div class="card">
+      <h2>Drafting notes</h2>
+      <textarea id="draftOutput" readonly></textarea>
+    </div>
+  </section>
+
+  <section>
+    <h2>Evidence directory</h2>
+    <div class="card">
+      <p class="row">
+        <button id="loadManifest" type="button">Load evidence-index.json</button>
+        <a class="button" href="build-evidence-index.sh" download>Download bash indexer</a>
+        <input id="fileSearch" placeholder="search local evidence manifest">
+      </p>
+      <p class="small muted">The manifest is generated by <code>bash build-evidence-index.sh elCentro evidence-index.json</code>. The browser can read the manifest but cannot scan directories directly.</p>
+      <div id="manifestStatus" class="small muted"></div>
+    </div>
+    <div id="files" class="grid"></div>
+  </section>
+
+  <section>
+    <h2>Bulk tracking links</h2>
+    <div class="card">
+      <p class="row">
+        <a id="bulkLink" class="button" target="_blank" rel="noopener">Open combined USPS query</a>
+        <button id="openAll" type="button">Open all USPS tabs</button>
+        <button id="copyNumbers" type="button">Copy tracking numbers</button>
+      </p>
+      <textarea id="numberDump" readonly></textarea>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const USPS_TRACK_BASE = "https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=";
+  const LS_EVENTS = "certLedger.timelineEvents.v1";
+
+  const parties = ["Apartment office", "Firmus", "National Credit Systems", "Borland Law", "Credit bureau", "Other"];
+
+  const letters = [
+    { id:"letter0", file:"elCentro/letter0.html", title:"letter0.html", description:"Initial dispute/demand letter used for apartment office and Firmus.", appliesTo:["office","firmus"] },
+    { id:"letter1", file:"elCentro/letter1.html", title:"letter1.html", description:"Follow-up or specialized letter for Firmus only.", appliesTo:["firmus"] },
+    { id:"letter1r", file:"elCentro/letter1_revised.html", title:"letter1_revised.html", description:"Revised follow-up letter.", appliesTo:["firmus"] }
+  ];
+
+  const trackingRecords = [
+    { id:"office", label:"Office", party:"Apartment office", type:"USPS Certified Mail", tracking:"9589071052702997537269", destination:"Austin, TX 78752", role:"Original apartment/location recipient", screenshots:[] },
+    { id:"firmus", label:"Firmus", party:"Firmus", type:"USPS Certified Mail", tracking:"9589071052702997537276", destination:"Austin, TX 78755", role:"Property/owner/management recipient", screenshots:[
+      { file:"elCentro/9589071052702997537276-chimneyCorners.png", caption:"Firmus certified mail screenshot showing CHIMNEY CORNERS / Austin handling location." },
+      { file:"elCentro/9589071052702997537276-received.png", caption:"Firmus certified mail accepted / received screenshot." },
+      { file:"elCentro/9589071052702997537276-warning.png", caption:"Firmus USPS warning / status screenshot." }
+    ] },
+    { id:"firmusReturn", label:"Firmus return receipt", party:"Firmus", type:"USPS Return Receipt", tracking:"9590940307435196413103", destination:"Austin, TX 78755", role:"Return receipt evidence for Firmus mailing", screenshots:[] },
+    { id:"officeReturn", label:"Office return receipt", party:"Apartment office", type:"USPS Return Receipt", tracking:"9590940307435196413110", destination:"Austin, TX 78752", role:"Return receipt evidence for apartment office mailing", screenshots:[] },
+    { id:"ncs", label:"NCS", party:"National Credit Systems", type:"USPS Certified Mail", tracking:"9589071052702997537290", destination:"Marietta, GA 30006", role:"Debt collector / credit reporting dispute recipient", screenshots:[
+      { file:"elCentro/9589071052702997537290-pastAtlanta.png", caption:"NCS certified mail screenshot from earlier Atlanta-area tracking state." },
+      { file:"elCentro/9589071052702997537290-atlanta.png", caption:"NCS certified mail screenshot showing Atlanta-area tracking state." },
+      { file:"elCentro/9589071052702997537290-marietta.png", caption:"NCS certified mail screenshot showing Marietta, GA PO Box availability/delivery state." }
+    ] }
+  ];
+
+  const seedTimeline = [
+    { date:"2026-05-09T12:00", kind:"usps", party:"Firmus", tracking:"9589071052702997537276", text:"Firmus certified letter became available for pickup / notice at USPS." },
+    { date:"2026-05-18T12:00", kind:"letter", party:"Firmus", tracking:"", text:"Email notice sent to Firmus addresses re unclaimed certified letter and disputed Centro/NCS account." },
+    { date:"2026-05-18T14:40", kind:"call", party:"National Credit Systems", tracking:"", text:"Called Borland Law / NCS-related line. Initial operator stated no active litigation was pending. Transferred to manager. Manager provided NCS account contact/name. Disputed debt. No payment agreement made. No admission of debt made." },
+    { date:"2026-05-19T12:00", kind:"usps", party:"Firmus", tracking:"9589071052702997537276", text:"Firmus accepted / picked up certified mail." }
+  ];
+
+  let manifest = { items: [] };
+
+  function el(tag, attrs, text) {
+    const node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (key) {
+      if (key === "className") node.className = attrs[key];
+      else node.setAttribute(key, attrs[key]);
+    });
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function uspsUrl(tracking) { return USPS_TRACK_BASE + encodeURIComponent(tracking); }
+  function esc(s) { return String(s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+  function downloadText(filename, text, type) {
+    const blob = new Blob([text], { type: type || "text/plain" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: filename });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  function loadEvents() {
+    try { return JSON.parse(localStorage.getItem(LS_EVENTS) || "[]"); }
+    catch (e) { return []; }
+  }
+  function saveEvents(events) { localStorage.setItem(LS_EVENTS, JSON.stringify(events, null, 2)); }
+  function lettersForRecord(recordId) { return letters.filter(l => l.appliesTo.indexOf(recordId) !== -1); }
+
+  function renderRecords() {
+    const holder = document.getElementById("records"); holder.innerHTML = "";
+    trackingRecords.forEach(function (record) {
+      const card = el("article", { className:"card" });
+      card.appendChild(el("h3", {}, record.label));
+      card.appendChild(el("p", { className:"mono" }, record.tracking));
+      const meta = el("p", { className:"row" });
+      [record.type, record.destination, record.party].forEach(v => meta.appendChild(el("span", { className:"pill" }, v)));
+      card.appendChild(meta);
+      card.appendChild(el("p", { className:"small muted" }, record.role));
+      const row = el("p", { className:"row" });
+      row.appendChild(el("a", { className:"button", href:uspsUrl(record.tracking), target:"_blank", rel:"noopener" }, "USPS live lookup"));
+      const add = el("button", { type:"button" }, "Snapshot note");
+      add.addEventListener("click", function () {
+        document.getElementById("eventKind").value = "usps";
+        document.getElementById("eventParty").value = record.party;
+        document.getElementById("eventTracking").value = record.tracking;
+        document.getElementById("eventText").focus();
+      });
+      row.appendChild(add);
+      row.appendChild(el("a", { className:"button", href:uspsUrl(record.tracking), target:"_blank", rel:"noopener" }, "Open"));
+      card.appendChild(row);
+      holder.appendChild(card);
+    });
+  }
+
+  function renderBulk() {
+    const numbers = trackingRecords.map(r => r.tracking);
+    const dump = numbers.join("\n");
+    document.getElementById("numberDump").value = dump;
+    document.getElementById("bulkLink").href = USPS_TRACK_BASE + encodeURIComponent(numbers.join(","));
+    document.getElementById("openAll").onclick = function () { trackingRecords.forEach(r => window.open(uspsUrl(r.tracking), "_blank", "noopener")); };
+    document.getElementById("copyNumbers").onclick = function () { navigator.clipboard.writeText(dump); };
+  }
+
+  function populateControls() {
+    const partySel = document.getElementById("eventParty");
+    parties.forEach(p => partySel.appendChild(el("option", { value:p }, p)));
+    document.getElementById("eventDate").value = new Date().toISOString().slice(0,16);
+
+    const recipientSelect = document.getElementById("recipientSelect");
+    const letterSelect = document.getElementById("letterSelect");
+    trackingRecords.filter(r => ["office","firmus","ncs"].indexOf(r.id) !== -1).forEach(r => recipientSelect.appendChild(el("option", { value:r.id }, r.label + " — " + r.party)));
+    function updateLetterSelect() {
+      letterSelect.innerHTML = "";
+      const related = lettersForRecord(recipientSelect.value);
+      if (!related.length) letterSelect.appendChild(el("option", { value:"" }, "No mapped letter file"));
+      related.forEach(l => letterSelect.appendChild(el("option", { value:l.id }, l.title)));
+    }
+    recipientSelect.onchange = updateLetterSelect;
+    updateLetterSelect();
+  }
+
+  function normalizedTimeline() {
+    const shotEvents = [];
+    trackingRecords.forEach(r => r.screenshots.forEach(s => shotEvents.push({ date:"", kind:"evidence", party:r.party, tracking:r.tracking, text:s.caption, file:s.file })));
+    return seedTimeline.concat(shotEvents, loadEvents()).sort(function (a,b) {
+      return String(a.date || "9999").localeCompare(String(b.date || "9999"));
+    });
+  }
+  function renderTimeline() {
+    const q = document.getElementById("timelineSearch").value.toLowerCase().trim();
+    const holder = document.getElementById("timeline"); holder.innerHTML = "";
+    normalizedTimeline().filter(function (e) {
+      const hay = [e.date, e.kind, e.party, e.tracking, e.text, e.file].join(" ").toLowerCase();
+      return !q || hay.indexOf(q) !== -1;
+    }).forEach(function (e) {
+      const card = el("article", { className:"card event " + (e.kind || "note") });
+      const p = el("p", { className:"row" });
+      p.appendChild(el("span", { className:"pill ok" }, e.date || "undated"));
+      p.appendChild(el("span", { className:"pill" }, e.kind || "note"));
+      if (e.party) p.appendChild(el("span", { className:"pill" }, e.party));
+      if (e.tracking) p.appendChild(el("span", { className:"pill warn" }, e.tracking));
+      card.appendChild(p);
+      card.appendChild(el("p", {}, e.text || ""));
+      if (e.file) {
+        const row = el("p", { className:"row" });
+        row.appendChild(el("a", { className:"button", href:e.file, target:"_blank", rel:"noopener" }, "Open file"));
+        row.appendChild(el("code", {}, e.file));
+        card.appendChild(row);
+      }
+      holder.appendChild(card);
+    });
+  }
+
+  function saveEvent() {
+    const event = {
+      date: document.getElementById("eventDate").value,
+      kind: document.getElementById("eventKind").value,
+      party: document.getElementById("eventParty").value,
+      tracking: document.getElementById("eventTracking").value.trim(),
+      text: document.getElementById("eventText").value.trim()
+    };
+    if (!event.text) return alert("Add event text first.");
+    const events = loadEvents(); events.push(event); saveEvents(events);
+    document.getElementById("eventText").value = "";
+    renderTimeline();
+  }
+
+  function buildDraftingNotes() {
+    const recipientId = document.getElementById("recipientSelect").value;
+    const letterId = document.getElementById("letterSelect").value;
+    const recipient = trackingRecords.find(r => r.id === recipientId);
+    const letter = letters.find(l => l.id === letterId);
+    const lines = [];
+    lines.push("LEGAL / DISPUTE DRAFTING NOTES");
+    lines.push("Theme: " + document.getElementById("claimTheme").value.trim());
+    lines.push("");
+    lines.push("Recipient: " + recipient.label + " / " + recipient.party);
+    lines.push("Destination: " + recipient.destination);
+    lines.push("USPS tracking: " + recipient.tracking);
+    lines.push("USPS lookup: " + uspsUrl(recipient.tracking));
+    lines.push("Base letter file: " + (letter ? letter.file : "none mapped"));
+    lines.push("");
+    lines.push("Core posture:");
+    lines.push("- Treat the amount as disputed, not admitted.");
+    lines.push("- Ask for validation, lease clauses, itemized accounting, mitigation/reletting evidence, and credit reporting correction where applicable.");
+    lines.push("- Avoid saying you owe the amount. Say the claimed amount is disputed and unsupported unless fully validated.");
+    lines.push("");
+    lines.push("Facts to preserve:");
+    lines.push(document.getElementById("factsBox").value.trim() || "[add facts]");
+    lines.push("");
+    lines.push("Requested outcomes:");
+    lines.push(document.getElementById("requestsBox").value.trim() || "[add requests]");
+    lines.push("");
+    lines.push("Evidence attachments / exhibits:");
+    lines.push("- USPS tracking printout for " + recipient.tracking);
+    recipient.screenshots.forEach(s => lines.push("- Local USPS screenshot: " + s.file));
+    if (letter) lines.push("- Local letter copy: " + letter.file);
+    lines.push("");
+    lines.push("Timeline filter term: " + recipient.party);
+    document.getElementById("draftOutput").value = lines.join("\n");
+  }
+
+  async function loadManifest() {
+    const status = document.getElementById("manifestStatus");
+    try {
+      const res = await fetch("evidence-index.json", { cache:"no-store" });
+      if (!res.ok) throw new Error(res.status + " " + res.statusText);
+      manifest = await res.json();
+      status.textContent = "Loaded " + manifest.count + " files from " + manifest.root + " at " + manifest.created + ".";
+      renderFiles();
+    } catch (e) {
+      status.textContent = "Could not load evidence-index.json. Run the bash indexer and serve this directory over HTTP. Error: " + e.message;
+    }
+  }
+  function renderFiles() {
+    const q = document.getElementById("fileSearch").value.toLowerCase().trim();
+    const holder = document.getElementById("files"); holder.innerHTML = "";
+    (manifest.items || []).filter(function (item) {
+      const hay = [item.path, item.name, item.extension, item.mime, item.sha256, item.preview].join(" ").toLowerCase();
+      return !q || hay.indexOf(q) !== -1;
+    }).forEach(function (item) {
+      const card = el("article", { className:"card" });
+      card.appendChild(el("h3", {}, item.name));
+      const meta = el("p", { className:"row" });
+      meta.appendChild(el("span", { className:"pill" }, item.extension || "file"));
+      meta.appendChild(el("span", { className:"pill" }, item.mime));
+      meta.appendChild(el("span", { className:"pill" }, String(item.size) + " bytes"));
+      card.appendChild(meta);
+      card.appendChild(el("p", { className:"mono small" }, item.path));
+      card.appendChild(el("p", { className:"small muted" }, "modified " + item.modified));
+      if (item.preview) card.appendChild(el("pre", { className:"file-preview small" }, item.preview));
+      const row = el("p", { className:"row" });
+      row.appendChild(el("a", { className:"button", href:item.path, target:"_blank", rel:"noopener" }, "Open"));
+      const add = el("button", { type:"button" }, "Add timeline note");
+      add.onclick = function () {
+        document.getElementById("eventKind").value = "evidence";
+        document.getElementById("eventText").value = "Evidence file: " + item.path + "\nSHA256: " + item.sha256;
+        document.getElementById("eventText").focus();
+      };
+      row.appendChild(add);
+      card.appendChild(row);
+      holder.appendChild(card);
+    });
+  }
+
+  document.getElementById("saveEvent").onclick = saveEvent;
+  document.getElementById("exportEvents").onclick = function () { downloadText("certLedger-timeline-events.json", JSON.stringify({ exported:new Date().toISOString(), events:normalizedTimeline() }, null, 2), "application/json"); };
+  document.getElementById("clearEvents").onclick = function () { if (confirm("Clear locally saved timeline events? Seed events remain.")) { localStorage.removeItem(LS_EVENTS); renderTimeline(); } };
+  document.getElementById("timelineSearch").oninput = renderTimeline;
+  document.getElementById("buildDraft").onclick = buildDraftingNotes;
+  document.getElementById("copyDraft").onclick = function () { navigator.clipboard.writeText(document.getElementById("draftOutput").value); };
+  document.getElementById("downloadDraft").onclick = function () { downloadText("drafting-notes.txt", document.getElementById("draftOutput").value); };
+  document.getElementById("loadManifest").onclick = loadManifest;
+  document.getElementById("fileSearch").oninput = renderFiles;
+
+  renderRecords(); renderBulk(); populateControls(); renderTimeline(); buildDraftingNotes(); loadManifest();
+})();
+</script>
+</body>
+</html>
